@@ -243,10 +243,18 @@ updateClusterLabels <- function(object, old.cluster.name = NULL, new.cluster.nam
 #'
 subsetData <- function(object, features = NULL) {
   interaction_input <- object@DB$interaction
-  if (length(unique(interaction_input$annotation)) > 1) {
-    interaction_input$annotation <- factor(interaction_input$annotation, levels = c("Secreted Signaling", "ECM-Receptor", "Cell-Cell Contact", "Non-protein Signaling"))
-    interaction_input <- interaction_input[order(interaction_input$annotation), , drop = FALSE]
-    interaction_input$annotation <- as.character(interaction_input$annotation)
+  if (object@options$datatype != "RNA") {
+    if ("annotation" %in% colnames(interaction_input) == FALSE) {
+      warning("A column named `annotation` is required in `object@DB$interaction` when running CellChat on spatial transcriptomics! The `annotation` column is now automatically added and all L-R pairs are assigned as `Secreted Signaling`, which means that these L-R pairs are assumed to mediate diffusion-based cellular communication.")
+      interaction_input$annotation <- "Secreted Signaling"
+    }
+  }
+  if ("annotation" %in% colnames(interaction_input) == TRUE) {
+    if (length(unique(interaction_input$annotation)) > 1) {
+      interaction_input$annotation <- factor(interaction_input$annotation, levels = c("Secreted Signaling", "ECM-Receptor", "Non-protein Signaling", "Cell-Cell Contact"))
+      interaction_input <- interaction_input[order(interaction_input$annotation), , drop = FALSE]
+      interaction_input$annotation <- as.character(interaction_input$annotation)
+    }
     object@DB$interaction <- interaction_input
   }
 
@@ -272,17 +280,20 @@ subsetData <- function(object, features = NULL) {
 #' @param data.use a customed data matrix. Default: data.use = NULL and the expression matrix in the slot 'data.signaling' is used
 #' @param group.by cell group information; default is `object@idents`; otherwise it should be one of the column names of the meta slot
 #' @param idents.use a subset of cell groups used for analysis
-#' @param invert whether invert the idents.use
+#' @param invert whether to invert the idents.use
 #' @param group.dataset dataset origin information in a merged CellChat object; set it as one of the column names of meta slot when identifying the highly enriched genes in one dataset for each cell group
 #' @param pos.dataset the dataset name used for identifying highly enriched genes in this dataset for each cell group
+#' @param group.DE.combined Whether to perform differential expression between conditions by ignoring cell group information. By default, group.DE.combined = FALSE, which will perform differential expression analysis between two biological conditions for each cell group;
+#' When group.DE.combined = TRUE, it will perform DE analysis by combining all cell groups together.
+#'
 #' @param features.name a char name used for storing the over-expressed signaling genes in `object@var.features[[features.name]]`
 #' @param only.pos Only return positive markers
 #' @param features features used for identifying Over Expressed genes. default use all features
-#' @param return.object whether return the object; otherwise return a data frame consisting of over-expressed signaling genes associated with each cell group
-#' @param thresh.pc Threshold of the percent of cells expressed in one cluster
-#' @param thresh.fc Threshold of Log Fold Change
-#' @param thresh.p Threshold of p-values
-#' @param do.DE Whether perform differential expression analysis. By default do.DE = TRUE; When do.DE = FALSE, selecting over-expressed genes that are expressed in more than `min.cells` cells.
+#' @param return.object whether to return the object; otherwise return a data frame consisting of over-expressed signaling genes associated with each cell group
+#' @param thresh.pc Threshold of the fraction of cells expressed in one cluster, i.e., thresh.pc = 0.1
+#' @param thresh.fc Threshold of Log Fold Change, i.e., thresh.pc = 0.1
+#' @param thresh.p Threshold of p-values, i.e., thresh.pc = 0.05
+#' @param do.DE Whether to perform differential expression analysis. By default do.DE = TRUE; When do.DE = FALSE, selecting over-expressed genes that are expressed in more than `min.cells` cells.
 #' @param do.fast If do.fast = TRUE, then perform a ultra-fast Wilcoxon test using presto package; otherwise using stats package. These two methods produce different logFC values, and the presto::wilcoxauc method gives smaller values.
 #' @param min.cells the minmum number of expressed cells required for the genes that are considered for cell-cell communication analysis
 #' @importFrom future nbrOfWorkers
@@ -296,7 +307,9 @@ subsetData <- function(object, features = NULL) {
 #' `object@var.features[[paste0(features.name, ".info")]]` is a data frame returned from the differential expression analysis
 #' @export
 #'
-identifyOverExpressedGenes <- function(object, data.use = NULL, group.by = NULL, idents.use = NULL, invert = FALSE, group.dataset = NULL, pos.dataset = NULL, features.name = "features",  only.pos = TRUE, features = NULL, return.object = TRUE,
+identifyOverExpressedGenes <- function(object, data.use = NULL, group.by = NULL, idents.use = NULL, invert = FALSE,
+                                       group.dataset = NULL, pos.dataset = NULL, group.DE.combined = FALSE,
+                                       features.name = "features",  only.pos = TRUE, features = NULL, return.object = TRUE,
                                        thresh.pc = 0, thresh.fc = 0, thresh.p = 0.05, do.DE = TRUE, do.fast = TRUE, min.cells = 10) {
   if (!is.list(object@var.features)) {
     stop("Please update your CellChat object via `updateCellChat()`")
@@ -360,13 +373,14 @@ identifyOverExpressedGenes <- function(object, data.use = NULL, group.by = NULL,
         genes.de$pct.max <- pct.max
         markers.all <- dplyr::filter(genes.de, pvalues < thresh.p, logFC_abs >= thresh.fc, pct.max > thresh.pc*100) %>% arrange(pvalues)
 
-      } else {
+      } else if ((!is.null(group.dataset)) & (group.DE.combined == FALSE)) {
         genes.de <- data.frame()
         for (i in 1:numCluster) {
           idx <- which(labels == level.use[i])
           data.use.i <- data.use[ ,idx]
           labels.i <- labels.dataset[idx]
           genes.de.i <- presto::wilcoxauc(data.use.i, labels.i)
+          # genes.de.i <- genes.de.i[1:(nrow(genes.de.i)/2),]
           genes.de.i$clusters <- level.use[i]
           genes.de <- rbind(genes.de, genes.de.i)
         }
@@ -377,6 +391,20 @@ identifyOverExpressedGenes <- function(object, data.use = NULL, group.by = NULL,
         markers.all <- dplyr::filter(genes.de, pvalues < thresh.p, logFC_abs >= thresh.fc, pct.max > thresh.pc*100)
         markers.all$datasets <- factor(markers.all$datasets, levels = levels(labels.dataset))
         markers.all <- markers.all[order(markers.all$datasets, markers.all$pvalues, -markers.all$logFC), ]
+      } else if ((!is.null(group.dataset)) & (group.DE.combined == TRUE)) {
+        genes.de.c <- presto::wilcoxauc(data.use, labels.dataset)
+        genes.de.c <- genes.de.c[1:(nrow(genes.de.c)/2),]
+        genes.de <- data.frame()
+        for (i in 1:numCluster) {
+          genes.de.c$clusters <- level.use[i]
+          genes.de <- rbind(genes.de, genes.de.c)
+        }
+        colnames(genes.de) <- plyr::mapvalues(colnames(genes.de),from = c("group","feature","pval","logFC","pct_in","pct_out","padj"), to = c("datasets","features","pvalues","logFC","pct.1", "pct.2","pvalues.adj"), warn_missing = TRUE)
+        genes.de$logFC_abs <- abs(genes.de$logFC)
+        pct.max <- apply(genes.de[, c("pct.1", "pct.2"), drop = FALSE], MARGIN = 1, FUN = max)
+        genes.de$pct.max <- pct.max
+        markers.all <- dplyr::filter(genes.de, pvalues < thresh.p, logFC_abs >= thresh.fc, pct.max > thresh.pc*100) %>% arrange(pvalues)
+
       }
       markers.all <- dplyr::select(markers.all, -c("logFC_abs","statistic","pct.max"))
 
@@ -408,9 +436,12 @@ identifyOverExpressedGenes <- function(object, data.use = NULL, group.by = NULL,
         if (is.null(group.dataset)) {
           cell.use1 <- which(labels == level.use[i])
           cell.use2 <- base::setdiff(1:length(labels), cell.use1)
-        } else {
+        } else if ((!is.null(group.dataset)) & (group.DE.combined == FALSE)) {
           cell.use1 <- which((labels == level.use[i]) & (labels.dataset == pos.dataset))
           cell.use2 <- which((labels == level.use[i]) & (labels.dataset != pos.dataset))
+        } else if ((!is.null(group.dataset)) & (group.DE.combined == TRUE)) {
+          cell.use1 <- which(labels.dataset == pos.dataset)
+          cell.use2 <- which(labels.dataset != pos.dataset)
         }
 
         # feature selection (based on percentages)
@@ -607,6 +638,9 @@ identifyOverExpressedLigandReceptor <- function(object, features.name = "feature
 #' @param object CellChat object
 #' @param features.name a char name used for assess the results in `object@var.features[[features.name]]`
 #' @param features a vector of features to use. default use all over-expressed genes in `object@var.features[[features.name]]`
+#' @param variable.both variable.both = TRUE will require that both ligand and receptor from one pair are over-expressed;
+#'
+#' variable.both = FALSE will only require that either ligand or receptor from one pair is over-expressed, leading to more over-expressed ligand-receptor interactions (pairs) for further analysis.
 #' @param return.object whether returning a CellChat object. If FALSE, it will return a data frame containing the over-expressed ligand-receptor pairs
 #' @importFrom future nbrOfWorkers
 #' @importFrom future.apply future_sapply
@@ -616,7 +650,7 @@ identifyOverExpressedLigandReceptor <- function(object, features.name = "feature
 #' @return A CellChat object or a data frame. If returning a CellChat object, a new element named 'LRsig' will be added into the list `object@LR`
 #' @export
 #'
-identifyOverExpressedInteractions <- function(object, features.name = "features", features = NULL, return.object = TRUE) {
+identifyOverExpressedInteractions <- function(object, features.name = "features", variable.both = TRUE, features = NULL, return.object = TRUE) {
   gene.use <- row.names(object@data.signaling)
   DB <- object@DB
   if (is.null(features)) {
@@ -652,20 +686,50 @@ identifyOverExpressedInteractions <- function(object, features.name = "features"
   )
   complexSubunits.sig <- complexSubunits[index.sig,]
 
-  pairLR <- select(interaction_input, ligand, receptor)
-
-  index.sig <- unlist(
+  index.use <- unlist(
     x = my.sapply(
-      X = 1:nrow(pairLR),
+      X = 1:nrow(complexSubunits),
       FUN = function(x) {
-        if (all(unlist(pairLR[x,], use.names = F) %in% c(features.sig, rownames(complexSubunits.sig)))) {
+        complexsubunitsV <- unlist(complexSubunits[x,], use.names = F)
+        complexsubunitsV <- complexsubunitsV[complexsubunitsV != ""]
+        if (all(complexsubunitsV %in% gene.use)) {
           return(x)
         }
       }
     )
   )
+  complexSubunits.use <- complexSubunits[index.use,]
+
+  pairLR <- select(interaction_input, ligand, receptor)
+
+  if (variable.both) {
+    index.sig <- unlist(
+      x = my.sapply(
+        X = 1:nrow(pairLR),
+        FUN = function(x) {
+          if (all(unlist(pairLR[x,], use.names = F) %in% c(features.sig, rownames(complexSubunits.sig)))) {
+            return(x)
+          }
+        }
+      )
+    )
+  } else {
+    index.sig <- unlist(
+      x = my.sapply(
+        X = 1:nrow(pairLR),
+        FUN = function(x) {
+          # if (all(unlist(pairLR[x,], use.names = F) %in% c(features.sig, rownames(complexSubunits.sig)))) {
+          if (all(unlist(pairLR[x,], use.names = F) %in% c(gene.use, rownames(complexSubunits.use))) & (length(intersect(unlist(pairLR[x,], use.names = F), c(features.sig, rownames(complexSubunits.sig)))) > 0)) {
+            return(x)
+          }
+        }
+      )
+    )
+  }
+
   pairLRsig <- interaction_input[index.sig, ]
   object@LR$LRsig <- pairLRsig
+  cat("The number of highly variable ligand-receptor pairs used for signaling inference is", nrow(pairLRsig), '\n')
   if (return.object) {
     return(object)
   } else {

@@ -136,15 +136,15 @@ searchPair <- function(signaling = c(), pairLR.use, key = c("pathway_name","liga
 #'
 subsetDB <- function(CellChatDB, search = c(), key = "annotation", non_protein = FALSE) {
   interaction_input <- CellChatDB$interaction
-  if (is.null(search) & non_protein == FALSE & key == "annotation") {
+  if (is.null(search) & non_protein == FALSE & any(key == "annotation")) {
     search <- c("Secreted Signaling","ECM-Receptor","Cell-Cell Contact")
-  } else if (is.null(search) & non_protein == TRUE & key == "annotation") {
+  } else if (is.null(search) & non_protein == TRUE & any(key == "annotation")) {
     search <- c("Secreted Signaling","ECM-Receptor","Cell-Cell Contact","Non-protein Signaling")
   }
 
   if ("Non-protein Signaling" %in% unlist(search)) {
     non_protein = TRUE
-    message("The non-protein signaling is now included for CellChat analysis, which is usually used for neuron-neuron communication!")
+    message("The non-protein signaling is now included for CellChat analysis, which is usually used for neuron-neuron and metabolic communication!")
   }
   if (non_protein == FALSE) {
     interaction_input <- subset(interaction_input, annotation != "Non-protein Signaling")
