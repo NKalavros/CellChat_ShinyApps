@@ -51,7 +51,8 @@ Some users might have issues when installing CellChat pacakge due to different o
 
 
 ## Tutorials
-Please check the tutorial directory of the repo.
+Please check the tutorial directory of the repo. Example datasets are publicly available at [figshare](https://figshare.com/projects/Example_data_for_cell-cell_communication_analysis_using_CellChat/157272). 
+
 
 ### Analysis of single-cell transcriptomics data
 - [Full tutorial for CellChat analysis of a single dataset with detailed explanation of each function](https://htmlpreview.github.io/?https://github.com/jinworks/CellChat/blob/master/tutorial/CellChat-vignette.html)
@@ -66,10 +67,6 @@ Please check the tutorial directory of the repo.
 ### Additional utilities
 - [Interface with other single-cell analysis toolkits (e.g., Seurat, SingleCellExperiment, Scanpy)](https://htmlpreview.github.io/?https://github.com/jinworks/CellChat/blob/master/tutorial/Interface_with_other_single-cell_analysis_toolkits.html)
 - [Tutorial for updating ligand-receptor database CellChatDB](https://htmlpreview.github.io/?https://github.com/jinworks/CellChat/blob/master/tutorial/Update-CellChatDB.html)
-
-<p align="center">
-  <img width="700"  src="https://github.com/jinworks/CellChat/blob/main/overview_CellChat.png">
-</p>
 
 
 ## Web-based “CellChat Explorer” 

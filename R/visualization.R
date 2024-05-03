@@ -1297,13 +1297,26 @@ netVisual_circle <-function(net, color.use = NULL,title.name = NULL, sources.use
   }
   net[is.na(net)] <- 0
 
-
+  if (is.null(color.use)) {
+    color.use = scPalette(nrow(net))
+    names(color.use) <- rownames(net)
+  } else {
+    if (is.null(names(color.use))) {
+      stop("The input `color.use` should be a named vector! \n")
+    }
+  }
   if (remove.isolate) {
     idx1 <- which(Matrix::rowSums(net) == 0)
     idx2 <- which(Matrix::colSums(net) == 0)
-    idx <- intersect(idx1, idx2)
-    net <- net[-idx, ]
-    net <- net[, -idx]
+    idx.isolate <- intersect(idx1, idx2)
+    if (length(idx.isolate) > 0) {
+      net <- net[-idx.isolate, ]
+      net <- net[, -idx.isolate]
+      color.use = color.use[-idx.isolate]
+      if (length(unique(vertex.weight)) > 1) {
+        vertex.weight <- vertex.weight[-idx.isolate]
+      }
+    }
   }
 
   g <- graph_from_adjacency_matrix(net, mode = "directed", weighted = T)
@@ -1314,9 +1327,7 @@ netVisual_circle <-function(net, color.use = NULL,title.name = NULL, sources.use
   }else{
     coords_scale<-coords
   }
-  if (is.null(color.use)) {
-    color.use = scPalette(length(igraph::V(g)))
-  }
+
   if (is.null(vertex.weight.max)) {
     vertex.weight.max <- max(vertex.weight)
   }
@@ -2095,21 +2106,21 @@ netVisual_barplot <- function(object, comparison = c(1,2), measure = c("count", 
 #' @param thresh threshold of the p-value for determining significant interaction
 #' @param comparison a numerical vector giving the datasets for comparison in the merged object; e.g., comparison = c(1,2)
 #' @param group a numerical vector giving the group information of different datasets; e.g., group = c(1,2,2)
-#' @param remove.isolate whether remove the entire empty column, i.e., communication between certain cell groups
-#' @param max.dataset a scale, keep the communications with highest probability in max.dataset (i.e., certrain condition)
-#' @param min.dataset a scale, keep the communications with lowest probability in min.dataset (i.e., certrain condition)
+#' @param remove.isolate whether to remove the entire empty columns, i.e., communication between certain cell groups
+#' @param max.dataset a scale, keeping the communications with highest probability in max.dataset (i.e., certrain condition)
+#' @param min.dataset a scale, keeping the communications with lowest probability in min.dataset (i.e., certrain condition)
 #' @param min.quantile,max.quantile minimum and maximum quantile cutoff values for the colorbar, may specify quantile in [0,1]
-#' @param line.on whether add vertical line when doing comparison analysis for the merged object
+#' @param line.on whether to add vertical line when doing comparison analysis for the merged object
 #' @param line.size size of vertical line if added
-#' @param color.text.use whether color the xtick labels according to the dataset origin when doing comparison analysis
+#' @param color.text.use whether to color the xtick labels according to the dataset origin when doing comparison analysis
 #' @param color.text the colors for xtick labels according to the dataset origin when doing comparison analysis
 #' @param dot.size.min,dot.size.max Size of smallest and largest points
 #' @param title.name main title of the plot
 #' @param font.size,font.size.title font size of all the text and the title name
-#' @param show.legend whether show legend
-#' @param grid.on,color.grid whether add grid
+#' @param show.legend whether to show legend
+#' @param grid.on,color.grid whether to add grid
 #' @param angle.x,vjust.x,hjust.x parameters for adjusting the rotation of xtick labels
-#' @param return.data whether return the data.frame for replotting
+#' @param return.data whether to return the data.frame for replotting
 #'
 #' @return
 #' @export
@@ -2848,8 +2859,9 @@ netVisual_chord_gene <- function(object, slot.name = "net", color.use = NULL,
     prob[pval > thresh] <- 0
     net <- reshape2::melt(prob, value.name = "prob")
     colnames(net)[1:3] <- c("source","target","interaction_name")
-
-    pairLR = dplyr::select(object@LR$LRsig, c("interaction_name_2", "pathway_name",  "ligand",  "receptor" ,"annotation","evidence"))
+    cols.default <- c("interaction_name_2", "pathway_name",  "ligand",  "receptor" ,"annotation","evidence")
+    cols.common <- intersect(cols.default,colnames(object@LR$LRsig))
+    pairLR = dplyr::select(object@LR$LRsig, cols.common)
     idx <- match(net$interaction_name, rownames(pairLR))
     temp <- pairLR[idx,]
     net <- cbind(net, temp)
@@ -3940,7 +3952,7 @@ dotPlot <- function(object, features, rotation = TRUE, colormap = "OrRd", color.
 #'
 #' @param object seurat object
 #' @param features Features to plot (gene expression, metrics)
-#' @param colors.use defining the color for each cell group
+#' @param color.use defining the color for each cell group
 #' @param colors.ggplot whether use ggplot color scheme; default: colors.ggplot = FALSE
 #' @param split.by Name of a metadata column to split plot by;
 #' @param idents Which classes to include in the plot (default is all)
@@ -3960,18 +3972,18 @@ dotPlot <- function(object, features, rotation = TRUE, colormap = "OrRd", color.
 #' @importFrom  patchwork wrap_plots
 # #' @importFrom Seurat VlnPlot
 StackedVlnPlot<- function(object, features, idents = NULL, split.by = NULL,
-                          colors.use = NULL, colors.ggplot = FALSE,
+                          color.use = NULL, colors.ggplot = FALSE,
                           angle.x = 90, vjust.x = NULL, hjust.x = NULL, show.text.y = TRUE, line.size = NULL,
                           pt.size = 0,
                           plot.margin = margin(0, 0, 0, 0, "cm"),
                           ...) {
   options(warn=-1)
-  if (is.null(colors.use)) {
-    numCluster <- length(levels(Idents(object)))
+  if (is.null(color.use)) {
+    numCluster <- length(levels(Seurat::Idents(object)))
     if (colors.ggplot) {
-      colors.use <- NULL
+      color.use <- NULL
     } else {
-      colors.use <- scPalette(numCluster)
+      color.use <- scPalette(numCluster)
     }
   }
   if (is.null(vjust.x) | is.null(hjust.x)) {
@@ -3982,7 +3994,7 @@ StackedVlnPlot<- function(object, features, idents = NULL, split.by = NULL,
     hjust.x = hjust[angle == angle.x]
   }
 
-  plot_list<- purrr::map(features, function(x) modify_vlnplot(object = object, features = x, idents = idents, split.by = split.by, cols = colors.use, pt.size = pt.size,
+  plot_list<- purrr::map(features, function(x) modify_vlnplot(object = object, features = x, idents = idents, split.by = split.by, cols = color.use, pt.size = pt.size,
                                                               show.text.y = show.text.y, line.size = line.size, ...))
 
   # Add back x-axis title to bottom plot. patchwork is going to support this?
@@ -4087,7 +4099,7 @@ barPlot <- function(object, features, group.by = NULL, split.by = NULL, color.us
                     x.lab.rot = FALSE, ncol = 1, ...) {
   method <- match.arg(method)
   if (is.null(group.by)) {
-    labels = Idents(object)
+    labels = Seurat::Idents(object)
   } else {
     labels = object@meta.data[,group.by]
   }
